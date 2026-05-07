@@ -1,6 +1,6 @@
 # Phone Emulator Manager
 
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/YOUR_USERNAME)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/coreyess)
 
 A sleek, free, and open-source graphical user interface (GUI) for managing and launching mobile emulators across platforms without ever touching the command line.
 

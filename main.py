@@ -206,7 +206,7 @@ class SettingsDialog(QDialog):
         """)
         from PyQt6.QtGui import QDesktopServices
         from PyQt6.QtCore import QUrl
-        self.coffee_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://www.buymeacoffee.com/YOUR_USERNAME")))
+        self.coffee_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://buymeacoffee.com/coreyess")))
         
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         self.buttons.accepted.connect(self.accept)
