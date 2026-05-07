@@ -197,9 +197,25 @@ class SettingsDialog(QDialog):
         text_browser.setHtml(html_content)
         layout.addWidget(text_browser)
         
+        button_layout = QHBoxLayout()
+        self.coffee_button = QPushButton("☕ Buy Me a Coffee")
+        self.coffee_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.coffee_button.setStyleSheet("""
+            QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F59E0B, stop:1 #D97706); padding: 8px 16px; font-size: 13px; font-weight: bold; border: 1px solid #B45309; border-radius: 4px; color: white; }
+            QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #D97706, stop:1 #B45309); }
+        """)
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        self.coffee_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://www.buymeacoffee.com/YOUR_USERNAME")))
+        
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         self.buttons.accepted.connect(self.accept)
-        layout.addWidget(self.buttons)
+        
+        button_layout.addWidget(self.coffee_button)
+        button_layout.addStretch()
+        button_layout.addWidget(self.buttons)
+        
+        layout.addLayout(button_layout)
         
         self.setStyleSheet("""
             QDialog { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #09132D, stop:1 #020612); color: white; }
