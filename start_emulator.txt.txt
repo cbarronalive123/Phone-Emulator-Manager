@@ -1,0 +1,5 @@
+
+& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -list-avds
+
+Eg.
+& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd Pixel_9 -memory 6144 -cores 4 -gpu host

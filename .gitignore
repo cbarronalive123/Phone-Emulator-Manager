@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+build/
+dist/
+Output/
+devices.db
+.idea/
+installer.iss
+icon.ico
+*.spec
