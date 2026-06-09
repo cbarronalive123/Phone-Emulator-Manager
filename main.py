@@ -3,11 +3,12 @@ import subprocess
 import os
 import platform
 import sqlite3
+import multiprocessing
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QPushButton, QLabel, QSystemTrayIcon, QMenu,
     QDialog, QFormLayout, QLineEdit, QComboBox, QDialogButtonBox, QMessageBox,
-    QListWidgetItem, QTextBrowser
+    QListWidgetItem, QTextBrowser, QSpinBox, QGroupBox, QSlider, QFileDialog
 )
 from PyQt6.QtGui import QAction, QFont, QIcon, QPixmap, QPainter, QColor, QBrush, QPen
 from PyQt6.QtCore import Qt, QRectF, QThread, pyqtSignal, QSharedMemory
@@ -159,7 +160,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings & Instructions")
-        self.resize(550, 450)
+        self.resize(600, 650)
         
         layout = QVBoxLayout(self)
         
@@ -171,8 +172,11 @@ class SettingsDialog(QDialog):
         <style>
             a { color: #2ecc71; text-decoration: none; font-weight: bold; }
             h2 { color: #0098ff; margin-bottom: 5px; }
+            h3 { color: #8B5CF6; margin-bottom: 3px; margin-top: 12px; }
             ul { margin-top: 5px; }
             li { margin-bottom: 8px; }
+            code { background: #1E293B; color: #10B981; padding: 2px 6px; border-radius: 3px; font-family: Consolas, monospace; font-size: 12px; }
+            .cmd-block { background: #0F172A; border: 1px solid #1E3A8A; border-radius: 4px; padding: 8px; margin: 5px 0; font-family: Consolas, monospace; font-size: 12px; color: #10B981; }
         </style>
         <h2>Download Software Prerequisites</h2>
         <ul>
@@ -193,6 +197,48 @@ class SettingsDialog(QDialog):
             <li><b>HarmonyOS:</b> Open <i>Settings</i> > <i>About Phone</i> > Look for <b>HarmonyOS Version</b>.</li>
             <li><b>iOS:</b> Open <i>Settings</i> > <i>General</i> > <i>About</i> > Look for <b>iOS Version</b>.</li>
         </ul>
+        
+        <hr style='border: 1px solid #1E3A8A; margin: 15px 0;'>
+        
+        <h2>ADB Commands Reference</h2>
+        <p>These commands work with a running emulator. ADB is located in your Android SDK <code>platform-tools</code> folder.</p>
+        
+        <h3>🔍 Find Running Emulators</h3>
+        <div class='cmd-block'>adb devices</div>
+        <p style='font-size: 12px; color: #9CA3AF;'>Lists all connected emulators/devices. Running emulators show as "emulator-5554" etc.</p>
+        
+        <h3>📦 Install an APK</h3>
+        <div class='cmd-block'>adb install "C:\\path\\to\\app.apk"</div>
+        <div class='cmd-block'>adb install -r "C:\\path\\to\\app.apk"</div>
+        <p style='font-size: 12px; color: #9CA3AF;'>Use <code>-r</code> to reinstall/update an existing app.</p>
+        
+        <h3>📁 Push Files to Downloads Folder</h3>
+        <div class='cmd-block'>adb push "C:\\path\\to\\file.pdf" /sdcard/Download/</div>
+        <div class='cmd-block'>adb push "C:\\path\\to\\photo.jpg" /sdcard/Download/</div>
+        <p style='font-size: 12px; color: #9CA3AF;'>Files appear in the emulator's Downloads app immediately.</p>
+        
+        <h3>📁 Push Files to Any Folder</h3>
+        <div class='cmd-block'>adb push "C:\\path\\to\\file" /sdcard/Documents/</div>
+        <div class='cmd-block'>adb push "C:\\path\\to\\file" /sdcard/DCIM/</div>
+        <div class='cmd-block'>adb push "C:\\path\\to\\file" /sdcard/Music/</div>
+        
+        <h3>📥 Pull Files FROM Emulator</h3>
+        <div class='cmd-block'>adb pull /sdcard/Download/file.pdf "C:\\Users\\You\\Desktop\\"</div>
+        
+        <h3>🖥️ Open a Shell on the Emulator</h3>
+        <div class='cmd-block'>adb shell</div>
+        <p style='font-size: 12px; color: #9CA3AF;'>Opens a Linux terminal directly on the emulator.</p>
+        
+        <h3>📋 List Installed Packages</h3>
+        <div class='cmd-block'>adb shell pm list packages</div>
+        
+        <h3>🗑️ Uninstall an App</h3>
+        <div class='cmd-block'>adb uninstall com.example.appname</div>
+        
+        <h3>🔄 Multiple Emulators Running</h3>
+        <p style='font-size: 12px; color: #9CA3AF;'>If you have multiple emulators, target a specific one:</p>
+        <div class='cmd-block'>adb -s emulator-5554 install "app.apk"</div>
+        <div class='cmd-block'>adb -s emulator-5554 push "file.pdf" /sdcard/Download/</div>
         """
         text_browser.setHtml(html_content)
         layout.addWidget(text_browser)
@@ -228,6 +274,321 @@ class SettingsDialog(QDialog):
             }
             QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2563EB, stop:1 #1E40AF); }
         """)
+
+class HardwareSettingsDialog(QDialog):
+    def __init__(self, avd_name, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Hardware Settings - {avd_name}")
+        self.setMinimumWidth(500)
+        self.avd_name = avd_name
+        self.config_path = self._find_config_ini()
+        
+        self.layout = QVBoxLayout(self)
+        
+        if not self.config_path:
+            error_label = QLabel(f"Could not find config.ini for AVD '{avd_name}'.\n"
+                                 f"Expected location: {self._get_avd_dir()}")
+            error_label.setWordWrap(True)
+            self.layout.addWidget(error_label)
+            self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+            self.buttons.rejected.connect(self.reject)
+            self.layout.addWidget(self.buttons)
+        else:
+            self._build_form()
+        
+        self.setStyleSheet("""
+            QDialog { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #09132D, stop:1 #020612); color: white; }
+            QLabel { color: white; background: transparent; font-size: 13px; }
+            QLineEdit, QComboBox, QSpinBox { 
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #172554, stop:1 #0A102A);
+                color: white; 
+                border: 1px solid #1D4ED8;
+                border-radius: 4px;
+                padding: 5px;
+                font-size: 13px;
+            }
+            QComboBox::drop-down { border: none; }
+            QSlider::groove:horizontal {
+                border: 1px solid #1D4ED8;
+                height: 8px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #172554, stop:1 #0A102A);
+                border-radius: 4px;
+            }
+            QSlider::handle:horizontal {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3B82F6, stop:1 #1D4ED8);
+                border: 1px solid #1E3A8A;
+                width: 18px;
+                margin: -5px 0;
+                border-radius: 9px;
+            }
+            QSlider::sub-page:horizontal {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1D4ED8, stop:1 #3B82F6);
+                border-radius: 4px;
+            }
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1D4ED8, stop:1 #172554);
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                border: 1px solid #1E3A8A;
+                font-size: 13px;
+            }
+            QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2563EB, stop:1 #1E40AF); }
+            QGroupBox { 
+                color: #3B82F6; 
+                border: 1px solid #1E3A8A; 
+                border-radius: 6px; 
+                margin-top: 10px; 
+                padding-top: 10px;
+                font-weight: bold;
+            }
+            QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }
+        """)
+
+    def _get_avd_dir(self):
+        """Get the .android/avd directory, works on any OS."""
+        avd_home = os.environ.get('ANDROID_AVD_HOME')
+        if avd_home and os.path.isdir(avd_home):
+            return avd_home
+        
+        android_home_dir = os.environ.get('ANDROID_EMULATOR_HOME')
+        if android_home_dir and os.path.isdir(os.path.join(android_home_dir, 'avd')):
+            return os.path.join(android_home_dir, 'avd')
+        
+        # Default location: ~/.android/avd
+        home = os.path.expanduser("~")
+        return os.path.join(home, ".android", "avd")
+
+    def _find_config_ini(self):
+        """Locate the config.ini for the given AVD name."""
+        avd_dir = self._get_avd_dir()
+        config_path = os.path.join(avd_dir, f"{self.avd_name}.avd", "config.ini")
+        if os.path.exists(config_path):
+            return config_path
+        return None
+
+    def _read_config(self):
+        """Read config.ini into a dict."""
+        config = {}
+        if self.config_path and os.path.exists(self.config_path):
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if '=' in line and not line.startswith('#'):
+                        key, _, value = line.partition('=')
+                        config[key.strip()] = value.strip()
+        return config
+
+    def _write_config(self, config):
+        """Write the config dict back to config.ini preserving order and comments."""
+        lines = []
+        if os.path.exists(self.config_path):
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        
+        written_keys = set()
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if '=' in stripped and not stripped.startswith('#'):
+                key = stripped.partition('=')[0].strip()
+                if key in config:
+                    new_lines.append(f"{key} = {config[key]}\n")
+                    written_keys.add(key)
+                else:
+                    new_lines.append(line)
+            else:
+                new_lines.append(line)
+        
+        # Append any new keys that weren't in the original file
+        for key, value in config.items():
+            if key not in written_keys:
+                new_lines.append(f"{key} = {value}\n")
+        
+        with open(self.config_path, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+
+    def _build_form(self):
+        config = self._read_config()
+        
+        # Current values
+        current_ram = int(config.get('hw.ramSize', '2048'))
+        current_cores = int(config.get('hw.cpu.ncore', '4'))
+        current_gpu = config.get('hw.gpu.mode', 'auto')
+        # Storage: disk.dataPartition.size is in MB or with suffix
+        storage_str = config.get('disk.dataPartition.size', '6442450944')
+        current_storage_mb = self._parse_storage_to_mb(storage_str)
+        
+        # Info label
+        info_label = QLabel(f"Editing: {self.config_path}")
+        info_label.setStyleSheet("color: #6B7280; font-size: 11px;")
+        info_label.setWordWrap(True)
+        self.layout.addWidget(info_label)
+        
+        # --- RAM Section ---
+        ram_group = QGroupBox("Memory (RAM)")
+        ram_layout = QVBoxLayout(ram_group)
+        
+        self.ram_label = QLabel(f"{current_ram // 1024} GB ({current_ram} MB)")
+        self.ram_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #3B82F6;")
+        ram_layout.addWidget(self.ram_label)
+        
+        self.ram_slider = QSlider(Qt.Orientation.Horizontal)
+        self.ram_slider.setRange(1, 64)  # 1 GB to 64 GB
+        self.ram_slider.setSingleStep(1)
+        self.ram_slider.setPageStep(4)
+        self.ram_slider.setValue(current_ram // 1024)
+        self.ram_slider.valueChanged.connect(self._on_ram_changed)
+        ram_layout.addWidget(self.ram_slider)
+        
+        ram_range_label = QLabel("1 GB ─────────────────────────────────────── 64 GB")
+        ram_range_label.setStyleSheet("color: #6B7280; font-size: 10px;")
+        ram_layout.addWidget(ram_range_label)
+        
+        # Recommendation
+        ram_rec = QLabel("💡 Recommendation: 8-12 GB for most phones. Galaxy S25 Ultra has 12 GB.")
+        ram_rec.setStyleSheet("color: #F59E0B; font-size: 11px;")
+        ram_rec.setWordWrap(True)
+        ram_layout.addWidget(ram_rec)
+        
+        self.layout.addWidget(ram_group)
+        
+        # --- CPU Section ---
+        cpu_group = QGroupBox("Processor (CPU Cores)")
+        cpu_layout = QVBoxLayout(cpu_group)
+        
+        max_cores = multiprocessing.cpu_count()
+        
+        self.cpu_label = QLabel(f"{current_cores} cores")
+        self.cpu_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #3B82F6;")
+        cpu_layout.addWidget(self.cpu_label)
+        
+        self.cpu_slider = QSlider(Qt.Orientation.Horizontal)
+        self.cpu_slider.setRange(1, max_cores)
+        self.cpu_slider.setSingleStep(1)
+        self.cpu_slider.setValue(min(current_cores, max_cores))
+        self.cpu_slider.valueChanged.connect(self._on_cpu_changed)
+        cpu_layout.addWidget(self.cpu_slider)
+        
+        cpu_range_label = QLabel(f"1 core ─────────────────────────────────── {max_cores} cores")
+        cpu_range_label.setStyleSheet("color: #6B7280; font-size: 10px;")
+        cpu_layout.addWidget(cpu_range_label)
+        
+        cpu_rec = QLabel("💡 Recommendation: 4 cores for standard use. Galaxy S25 Ultra has 8 cores (Snapdragon 8 Elite).")
+        cpu_rec.setStyleSheet("color: #F59E0B; font-size: 11px;")
+        cpu_rec.setWordWrap(True)
+        cpu_layout.addWidget(cpu_rec)
+        
+        self.layout.addWidget(cpu_group)
+        
+        # --- Storage Section ---
+        storage_group = QGroupBox("Internal Storage")
+        storage_layout = QVBoxLayout(storage_group)
+        
+        current_storage_gb = max(current_storage_mb // 1024, 2)
+        self.storage_label = QLabel(f"{current_storage_gb} GB")
+        self.storage_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #3B82F6;")
+        storage_layout.addWidget(self.storage_label)
+        
+        self.storage_slider = QSlider(Qt.Orientation.Horizontal)
+        self.storage_slider.setRange(2, 512)  # 2 GB to 512 GB
+        self.storage_slider.setSingleStep(1)
+        self.storage_slider.setPageStep(16)
+        self.storage_slider.setValue(current_storage_gb)
+        self.storage_slider.valueChanged.connect(self._on_storage_changed)
+        storage_layout.addWidget(self.storage_slider)
+        
+        storage_range_label = QLabel("2 GB ─────────────────────────────────────── 512 GB")
+        storage_range_label.setStyleSheet("color: #6B7280; font-size: 10px;")
+        storage_layout.addWidget(storage_range_label)
+        
+        storage_rec = QLabel("💡 Recommendation: 16-32 GB for normal use. Galaxy S25 Ultra has 128/256/512 GB options.")
+        storage_rec.setStyleSheet("color: #F59E0B; font-size: 11px;")
+        storage_rec.setWordWrap(True)
+        storage_layout.addWidget(storage_rec)
+        
+        self.layout.addWidget(storage_group)
+        
+        # --- GPU Section ---
+        gpu_group = QGroupBox("Graphics (GPU)")
+        gpu_layout = QFormLayout(gpu_group)
+        
+        self.gpu_combo = QComboBox()
+        gpu_options = [
+            ("host - Hardware Acceleration (Recommended)", "host"),
+            ("auto - Let Emulator Decide", "auto"),
+            ("swiftshader_indirect - Software Rendering", "swiftshader_indirect"),
+            ("angle_indirect - ANGLE (DirectX)", "angle_indirect"),
+            ("off - No GPU Acceleration", "off"),
+        ]
+        for display, value in gpu_options:
+            self.gpu_combo.addItem(display, value)
+        
+        # Set current GPU mode
+        for i in range(self.gpu_combo.count()):
+            if self.gpu_combo.itemData(i) == current_gpu:
+                self.gpu_combo.setCurrentIndex(i)
+                break
+        
+        gpu_layout.addRow("GPU Mode:", self.gpu_combo)
+        self.layout.addWidget(gpu_group)
+        
+        # --- Buttons ---
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.buttons.accepted.connect(self.save_settings)
+        self.buttons.rejected.connect(self.reject)
+        self.layout.addWidget(self.buttons)
+
+    def _parse_storage_to_mb(self, value_str):
+        """Parse storage value from config.ini to MB."""
+        value_str = value_str.strip()
+        try:
+            if value_str.lower().endswith('g'):
+                return int(float(value_str[:-1]) * 1024)
+            elif value_str.lower().endswith('m'):
+                return int(float(value_str[:-1]))
+            elif value_str.lower().endswith('k'):
+                return int(float(value_str[:-1]) / 1024)
+            else:
+                # Assume bytes
+                return int(int(value_str) / (1024 * 1024))
+        except (ValueError, TypeError):
+            return 6144  # Default 6 GB
+
+    def _on_ram_changed(self, value):
+        self.ram_label.setText(f"{value} GB ({value * 1024} MB)")
+
+    def _on_cpu_changed(self, value):
+        self.cpu_label.setText(f"{value} cores")
+
+    def _on_storage_changed(self, value):
+        self.storage_label.setText(f"{value} GB")
+
+    def save_settings(self):
+        config = self._read_config()
+        
+        ram_mb = self.ram_slider.value() * 1024
+        config['hw.ramSize'] = str(ram_mb)
+        config['hw.cpu.ncore'] = str(self.cpu_slider.value())
+        config['hw.gpu.mode'] = self.gpu_combo.currentData()
+        config['hw.gpu.enabled'] = 'yes' if self.gpu_combo.currentData() != 'off' else 'no'
+        config['disk.dataPartition.size'] = f"{self.storage_slider.value()}G"
+        
+        try:
+            self._write_config(config)
+            QMessageBox.information(self, "Saved", 
+                f"Hardware settings saved successfully!\n\n"
+                f"RAM: {self.ram_slider.value()} GB\n"
+                f"CPU Cores: {self.cpu_slider.value()}\n"
+                f"Storage: {self.storage_slider.value()} GB\n"
+                f"GPU Mode: {self.gpu_combo.currentData()}\n\n"
+                f"Changes will take effect next time the emulator starts.")
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save settings:\n{str(e)}")
+
 
 class CreateAvdDialog(QDialog):
     def __init__(self, parent=None):
@@ -575,6 +936,26 @@ class EmulatorLauncher(QMainWindow):
             QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #047857, stop:1 #064E3B); }
         """)
         
+        self.hardware_button = QPushButton("🔧 Hardware")
+        self.hardware_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.hardware_button.clicked.connect(self.open_hardware_settings)
+        self.hardware_button.setEnabled(False)
+        self.hardware_button.setStyleSheet("""
+            QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #7C3AED, stop:1 #4C1D95); padding: 10px; font-size: 13px; border: 1px solid #6D28D9; }
+            QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #8B5CF6, stop:1 #6D28D9); }
+            QPushButton:disabled { background: #4a4a5a; border: 1px solid #333; }
+        """)
+        
+        self.addfiles_button = QPushButton("📁 Add Files")
+        self.addfiles_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.addfiles_button.clicked.connect(self.add_files_to_emulator)
+        self.addfiles_button.setEnabled(False)
+        self.addfiles_button.setStyleSheet("""
+            QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0E7490, stop:1 #164E63); padding: 10px; font-size: 13px; border: 1px solid #06B6D4; }
+            QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0891B2, stop:1 #0E7490); }
+            QPushButton:disabled { background: #4a4a5a; border: 1px solid #333; }
+        """)
+        
         self.settings_button = QPushButton("⚙️ Settings")
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.settings_button.clicked.connect(self.open_settings)
@@ -585,6 +966,8 @@ class EmulatorLauncher(QMainWindow):
         
         self.manage_layout.addWidget(self.create_button)
         self.manage_layout.addWidget(self.delete_button)
+        self.manage_layout.addWidget(self.hardware_button)
+        self.manage_layout.addWidget(self.addfiles_button)
         self.manage_layout.addWidget(self.settings_button)
         self.layout.addLayout(self.manage_layout)
         
@@ -714,10 +1097,99 @@ class EmulatorLauncher(QMainWindow):
         dialog = SettingsDialog(self)
         dialog.exec()
 
+    def open_hardware_settings(self):
+        selected_items = self.list_widget.selectedItems()
+        if not selected_items:
+            return
+        avd_name = selected_items[0].data(Qt.ItemDataRole.UserRole)
+        if not avd_name:
+            return
+        dialog = HardwareSettingsDialog(avd_name, self)
+        dialog.exec()
+
+    def add_files_to_emulator(self):
+        """Push files to the running emulator's Download folder via ADB."""
+        sdk_root = self.get_sdk_root()
+        adb_exe = 'adb.exe' if platform.system() == 'Windows' else 'adb'
+        adb_path = os.path.join(sdk_root, 'platform-tools', adb_exe)
+        
+        if not os.path.exists(adb_path):
+            QMessageBox.critical(self, "ADB Not Found", 
+                f"Could not find ADB at:\n{adb_path}\n\n"
+                "Make sure Android SDK Platform-Tools is installed.\n"
+                "You can install it via Android Studio's SDK Manager.")
+            return
+        
+        # Check if emulator is running
+        try:
+            kwargs = {}
+            if platform.system() == "Windows":
+                kwargs['creationflags'] = 0x08000000
+            result = subprocess.run([adb_path, "devices"], capture_output=True, text=True, **kwargs)
+            lines = [l for l in result.stdout.strip().split('\n')[1:] if l.strip() and 'emulator' in l]
+            if not lines:
+                QMessageBox.warning(self, "No Emulator Running", 
+                    "No running emulator detected.\n\n"
+                    "Please start the emulator first, then use 'Add Files' to push files to it.")
+                return
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to check emulator status:\n{e}")
+            return
+        
+        # Open file picker
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "Select Files to Push to Emulator", "",
+            "All Files (*);;APK Files (*.apk);;Images (*.jpg *.png *.gif);;Documents (*.pdf *.doc *.docx);;Videos (*.mp4 *.avi *.mkv)")
+        
+        if not files:
+            return
+        
+        success_count = 0
+        fail_count = 0
+        apk_count = 0
+        
+        for file_path in files:
+            try:
+                kwargs = {}
+                if platform.system() == "Windows":
+                    kwargs['creationflags'] = 0x08000000
+                
+                if file_path.lower().endswith('.apk'):
+                    # Install APK
+                    result = subprocess.run([adb_path, "install", "-r", file_path], 
+                                         capture_output=True, text=True, **kwargs)
+                    if result.returncode == 0:
+                        apk_count += 1
+                    else:
+                        fail_count += 1
+                else:
+                    # Push to Download folder
+                    result = subprocess.run([adb_path, "push", file_path, "/sdcard/Download/"], 
+                                         capture_output=True, text=True, **kwargs)
+                    if result.returncode == 0:
+                        success_count += 1
+                    else:
+                        fail_count += 1
+            except Exception:
+                fail_count += 1
+        
+        # Show results
+        msg_parts = []
+        if success_count > 0:
+            msg_parts.append(f"✅ {success_count} file(s) pushed to /sdcard/Download/")
+        if apk_count > 0:
+            msg_parts.append(f"✅ {apk_count} APK(s) installed")
+        if fail_count > 0:
+            msg_parts.append(f"❌ {fail_count} file(s) failed")
+        
+        QMessageBox.information(self, "File Transfer Complete", "\n".join(msg_parts))
+
     def on_selection_changed(self):
         has_selection = len(self.list_widget.selectedItems()) > 0
         self.start_button.setEnabled(has_selection)
         self.delete_button.setEnabled(has_selection)
+        self.hardware_button.setEnabled(has_selection)
+        self.addfiles_button.setEnabled(has_selection)
 
     def load_avds(self):
         self.list_widget.clear()
@@ -846,7 +1318,7 @@ class EmulatorLauncher(QMainWindow):
             if platform.system() == "Windows":
                 kwargs['creationflags'] = 0x08000000
                 
-            cmd = [self.emulator_path, "-avd", avd_name, "-memory", "6144", "-cores", "4", "-gpu", "host"]
+            cmd = [self.emulator_path, "-avd", avd_name, "-gpu", "host"]
             
             subprocess.Popen(cmd, **kwargs)
             self.hide()
